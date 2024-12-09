@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const CommunityModel=require("./Schema/Community");
 const router = express.Router();
 const SECRET_KEY = 'your_secret_key';
+const SignupModel = require("./Schema/Signup");
 
 // Middleware for Authentication
 const authenticateToken = (req, res, next) => {
@@ -26,6 +27,25 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+router.delete('/deleteAccount', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.userId; // Extract user ID from the authenticated token
+
+    // Check if the user exists
+    const user = await SignupModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete the user
+    await SignupModel.findByIdAndDelete(userId);
+
+    res.json({ message: 'Account deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting account:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 router.post('/createPost', authenticateToken, (req, res) => {
   const communityData = {
     ...req.body,
@@ -43,21 +63,54 @@ router.post('/createPost', authenticateToken, (req, res) => {
 });
 
 // Route to add flight details to an existing trip
+// router.post('/addFlightToTrip', authenticateToken, async (req, res) => {
+//   const { tripId, flightDetails } = req.body;
+
+//   if (!tripId || !flightDetails) {
+//     return res.status(400).json({ error: 'Trip ID and flight details are required' });
+//   }
+
+//   try {
+//     const trip = await TripModel.findOne({ _id: tripId, userId: req.userId });
+//     if (!trip) return res.status(404).json({ error: 'Trip not found or does not belong to this user' });
+
+//     const flight = new FlightModel({ ...flightDetails, tripId });
+//     await flight.save();
+
+//     trip.flightDetails = flight._id;
+//     await trip.save();
+
+//     res.json({ message: 'Flight details added to the trip successfully', trip });
+//   } catch (err) {
+//     console.error("Error adding flight details: ", err);
+//     res.status(500).json({ error: 'Error adding flight details' });
+//   }
+// });
 router.post('/addFlightToTrip', authenticateToken, async (req, res) => {
   const { tripId, flightDetails } = req.body;
 
-  if (!tripId || !flightDetails) {
-    return res.status(400).json({ error: 'Trip ID and flight details are required' });
+  if (!tripId || !Array.isArray(flightDetails) || flightDetails.length === 0) {
+    return res.status(400).json({ error: 'Trip ID and an array of flight details are required' });
   }
 
   try {
+    // Find the trip for the authenticated user
     const trip = await TripModel.findOne({ _id: tripId, userId: req.userId });
-    if (!trip) return res.status(404).json({ error: 'Trip not found or does not belong to this user' });
+    if (!trip) {
+      return res.status(404).json({ error: 'Trip not found or does not belong to this user' });
+    }
 
-    const flight = new FlightModel({ ...flightDetails, tripId });
-    await flight.save();
+    // Save each flight detail and store their IDs
+    const savedFlights = await Promise.all(
+      flightDetails.map(async (flight) => {
+        const newFlight = new FlightModel({ ...flight });
+        await newFlight.save();
+        return newFlight._id; // Return the saved flight's ID
+      })
+    );
 
-    trip.flightDetails = flight._id;
+    // Update the trip's flightDetails array
+    trip.flightDetails = [...trip.flightDetails, ...savedFlights];
     await trip.save();
 
     res.json({ message: 'Flight details added to the trip successfully', trip });
@@ -66,6 +119,8 @@ router.post('/addFlightToTrip', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Error adding flight details' });
   }
 });
+
+
 //Car 
 router.post('/addCarToTrip', authenticateToken, async (req, res) => {
     const { tripId, carDetails } = req.body;
@@ -93,26 +148,36 @@ router.post('/addCarToTrip', authenticateToken, async (req, res) => {
 //hotel
   router.post('/addHotelToTrip', authenticateToken, async (req, res) => {
     const { tripId, hotelDetails } = req.body;
-  
-    if (!tripId || !hotelDetails) {
-      return res.status(400).json({ error: 'Trip ID and hotel details are required' });
+
+  if (!tripId || !Array.isArray(hotelDetails) || hotelDetails.length === 0) {
+    return res.status(400).json({ error: 'Trip ID and an array of hotel details are required' });
+  }
+
+  try {
+    // Find the trip for the authenticated user
+    const trip = await TripModel.findOne({ _id: tripId, userId: req.userId });
+    if (!trip) {
+      return res.status(404).json({ error: 'Trip not found or does not belong to this user' });
     }
-  
-    try {
-      const trip = await TripModel.findOne({ _id: tripId, userId: req.userId });
-      if (!trip) return res.status(404).json({ error: 'Trip not found or does not belong to this user' });
-  
-      const hotel = new HotelModel({ ...hotelDetails, tripId });
-      await hotel.save();
-  
-      trip.hotelDetails = hotel._id;
-      await trip.save();
-  
-      res.json({ message: 'Hotels details added to the trip successfully', trip });
-    } catch (err) {
-      console.error("Error adding hotel details: ", err);
-      res.status(500).json({ error: 'Error adding hotel details' });
-    }
+
+    // Save each flight detail and store their IDs
+    const savedHotel = await Promise.all(
+      hotelDetails.map(async (hotel) => {
+        const newHotel = new HotelModel({ ...hotel });
+        await newHotel.save();
+        return newHotel._id; // Return the saved flight's ID
+      })
+    );
+
+    // Update the trip's flightDetails array
+    trip.hotelDetails = [...trip.hotelDetails, ...savedHotel];
+    await trip.save();
+
+    res.json({ message: 'hotel details added to the trip successfully', trip });
+  } catch (err) {
+    console.error("Error adding hotel details: ", err);
+    res.status(500).json({ error: 'Error adding hotel details' });
+  }
   });
   //restaurant 
   router.post('/addRestaurantToTrip', authenticateToken, async (req, res) => {
